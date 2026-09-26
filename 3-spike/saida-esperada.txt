@@ -1,0 +1,39 @@
+CENÁRIO A: Processamento inicial das viagens
+-> Viagem registrada: evt_bus_00001 | Tarifa: R$ 4.50
+-> Viagem registrada: evt_bus_00002 | Tarifa: R$ 4.50
+-> Viagem registrada: evt_bus_00003 | Tarifa: R$ 4.50
+
+=================================================================
+RELATÓRIO DE AUDITORIA DO TRIBUNAL DE CONTAS
+=================================================================
+[evt_bus_00001] R$ 4.50 | Ref: usr_001
+    Passageiro: Alice Silva (CPF: 111.111.111-11)
+[evt_bus_00002] R$ 4.50 | Ref: usr_002
+    Passageiro: Bob Souza (CPF: 222.222.222-22)
+[evt_bus_00003] R$ 4.50 | Ref: usr_001
+    Passageiro: Alice Silva (CPF: 111.111.111-11)
+-----------------------------------------------------------------
+>> TOTAL CONCILIADO: R$ 13.50 (3 viagens)
+=================================================================
+
+CENÁRIO B: Solicitação de Direito ao Esquecimento (LGPD)
+-> Apagando dados pessoais do usuário usr_001...
+
+CENÁRIO C: Reprocessamento e Auditoria pós-LGPD
+-> Injetando os mesmos eventos na projeção para testar idempotência...
+-> Viagem registrada: evt_bus_00004 | Tarifa: R$ 4.50
+
+=================================================================
+RELATÓRIO DE AUDITORIA DO TRIBUNAL DE CONTAS
+=================================================================
+[evt_bus_00001] R$ 4.50 | Ref: usr_001
+    Passageiro: <ANONIMIZADO (LGPD)> (CPF: <ANONIMIZADO>)
+[evt_bus_00002] R$ 4.50 | Ref: usr_002
+    Passageiro: Bob Souza (CPF: 222.222.222-22)
+[evt_bus_00003] R$ 4.50 | Ref: usr_001
+    Passageiro: <ANONIMIZADO (LGPD)> (CPF: <ANONIMIZADO>)
+[evt_bus_00004] R$ 4.50 | Ref: usr_002
+    Passageiro: Bob Souza (CPF: 222.222.222-22)
+-----------------------------------------------------------------
+>> TOTAL CONCILIADO: R$ 18.00 (4 viagens)
+=================================================================
