@@ -2,48 +2,47 @@
 
 **Status:** aceito
 
-**Contexto:**  
-O sistema manipula dados com características e requisitos de consistência distintos. Cartões e recargas mantêm informações de saldo e movimentações; a validação embarcada precisa tomar decisões mesmo quando o ônibus permanece sem conectividade; a telemetria recebe continuamente posições da frota; a informação ao passageiro realiza consultas derivadas desses dados; e a conciliação utiliza o histórico das operações para calcular e recalcular os repasses.
+## Contexto
 
-Uma base de dados compartilhada entre todas essas capacidades criaria acoplamento entre subdomínios e dificultaria sua evolução independente. Por outro lado, a separação dos dados introduz a necessidade de sincronização entre capacidades e impede que todas as informações estejam fortemente consistentes ao mesmo tempo.
+O sistema possui dados com diferentes requisitos de consistência, volume e retenção. Cartões e recargas lidam com saldo financeiro, a validação precisa continuar funcionando durante períodos sem conexão, a telemetria recebe dados continuamente e a conciliação precisa preservar histórico suficiente para auditoria e recálculo.
 
-O Envelope E acrescenta a necessidade de fiscalização e tratamento dos dados pessoais conforme a LGPD. O histórico necessário para auditoria financeira deve, portanto, ser separado dos dados pessoais identificáveis que não precisam permanecer indefinidamente.
+Uma base compartilhada entre todas as capacidades aumentaria o acoplamento. Ao mesmo tempo, a separação dos dados exige definir claramente quem é responsável por cada informação e onde será utilizada consistência forte ou eventual.
 
-**Decisão:**  
-Distribuir a propriedade dos dados de acordo com as fronteiras dos subdomínios definidas na ADR 0001. Cada subdomínio será responsável pela escrita e manutenção de seus próprios dados, e outro subdomínio não poderá acessar diretamente suas tabelas.
+O Envelope E também exige que o histórico financeiro auditável não dependa da retenção permanente de dados pessoais identificáveis.
 
-A propriedade e a consistência serão definidas da seguinte forma:
+## Decisão
 
-- **Cartões e recarga:** será o proprietário dos dados de cartões, saldos e recargas. Alterações de saldo e operações financeiras dentro dessa fronteira exigem consistência forte. As alterações relevantes aos demais subdomínios serão publicadas por eventos.
+Distribuir a propriedade dos dados conforme as fronteiras definidas na ADR 0001. Cada subdomínio será responsável pela escrita de seus próprios dados e os demais deverão acessá-los apenas por interfaces ou eventos.
 
-- **Validação embarcada:** manterá localmente no validador apenas os dados necessários para realizar a validação durante períodos sem conectividade e os registros das validações ainda não sincronizadas. Quando a conexão for restabelecida, essas operações serão enviadas ao backend. A cópia embarcada é, portanto, uma visão necessária à operação offline, e não a fonte central de verdade dos dados de cartões.
+| Subdomínio | Propriedade dos dados | Consistência |
+|---|---|---|
+| **Cartões e Recarga** | Cartões, saldos, recargas e movimentações financeiras. | Forte nas operações que alteram saldo. |
+| **Validação Embarcada** | Dados mínimos para operação offline e validações ainda não sincronizadas. | Local durante a desconexão e eventual com o backend. |
+| **Telemetria** | Posições e demais dados enviados pela frota. | Assíncrona por eventos. |
+| **Informação ao Passageiro** | Modelos de leitura derivados da telemetria. | Eventual, com atraso de alguns segundos aceitável. |
+| **Conciliação** | Fechamentos, resultados e informações necessárias para auditoria e recálculo. | Forte na consolidação financeira. |
+| **Atendimento** | Informações próprias do atendimento. | Consulta dados externos por interfaces publicadas pelos respectivos proprietários. |
 
-- **Telemetria da frota:** será proprietária das posições e demais dados de telemetria recebidos dos veículos. Esses dados serão propagados de forma assíncrona para os consumidores que necessitam deles.
+Para permitir validação durante períodos sem conectividade, o cartão manterá o **estado operacional necessário à utilização offline**, incluindo o saldo utilizado pela validação e informações de controle da operação.
 
-- **Informação ao passageiro:** manterá modelos de leitura próprios derivados da telemetria. Esses modelos poderão apresentar alguns segundos de defasagem e serão atualizados de forma assíncrona, adotando consistência eventual entre a telemetria e as informações exibidas ao passageiro.
+Quando uma passagem for aceita, o validador atualizará esse estado no cartão e registrará localmente a validação. Dessa forma, outro validador poderá obter o estado atualizado diretamente do cartão mesmo sem conexão com o backend.
 
-- **Conciliação:** manterá os dados necessários ao fechamento financeiro, incluindo os resultados dos cálculos e as informações necessárias para permitir auditoria e recálculo conforme as regras aplicáveis à data de cada viagem. Os registros financeiros necessários à fiscalização serão preservados sem depender da permanência de dados pessoais identificáveis.
+Quando a conectividade retornar, as operações registradas localmente serão sincronizadas com Cartões e Recarga por eventos. Cada operação financeira possuirá identificador único e será processada de forma idempotente, evitando aplicação duplicada em casos de reenvio.
 
-- **Atendimento:** será proprietário dos dados específicos do atendimento e utilizará as interfaces publicadas pelos demais subdomínios quando precisar consultar informações que não lhe pertencem.
+Entre subdomínios será utilizada consistência eventual sempre que não houver necessidade de resposta imediata. Consistência forte ficará limitada às operações que possuem invariantes financeiras.
 
-Dados pertencentes a outro subdomínio serão obtidos por interfaces ou eventos publicados pelo proprietário, nunca por acesso direto às suas tabelas.
+Os dados pessoais identificáveis permanecerão separados dos fatos financeiros necessários à auditoria, permitindo ciclos distintos de retenção e exclusão.
 
-Será utilizada **consistência forte dentro das operações que possuem invariantes financeiras**, especialmente alterações de saldo e consolidação dos resultados financeiros. Entre subdomínios, quando não houver necessidade de resposta imediata, será utilizada **consistência eventual por eventos**.
+## Alternativas consideradas
 
-Os eventos necessários para auditoria e reconstrução financeira não deverão exigir a retenção permanente de dados pessoais identificáveis. Dados pessoais e dados financeiros auditáveis serão mantidos separados de forma que os primeiros possam seguir seu ciclo de retenção e exclusão sem destruir o histórico financeiro necessário à fiscalização.
+- **Banco único compartilhado:** descartado por aumentar o acoplamento entre os subdomínios.
+- **Consistência forte global:** descartada porque dependeria de comunicação contínua, incompatível com a operação offline dos ônibus.
+- **Consistência eventual para todos os dados:** descartada porque saldo, recarga e consolidação financeira possuem invariantes que precisam ser preservadas.
+- **Manter apenas uma cópia do saldo central nos validadores:** descartado porque diferentes ônibus offline poderiam tomar decisões utilizando versões desatualizadas do mesmo saldo.
+- **Armazenar dados pessoais diretamente no histórico financeiro permanente:** descartado por criar conflito entre a necessidade de auditoria e o ciclo de retenção e eliminação previsto para dados pessoais.
 
-**Alternativas consideradas:**
+## Consequências
 
-- **Utilizar um único banco de dados compartilhado por todo o sistema:** descartada porque permitiria que diferentes subdomínios dependessem diretamente das mesmas tabelas e esquemas. Mudanças nos dados de uma capacidade poderiam afetar outras capacidades e reduzir a independência definida na ADR 0001.
+**Positivas:** reduz o acoplamento entre capacidades; permite operação offline; mantém consistência forte onde ela é necessária; evita que consultas da Informação ao Passageiro sobrecarreguem dados transacionais; e separa o histórico financeiro dos dados pessoais.
 
-- **Aplicar consistência forte global entre todos os subdomínios:** descartada porque exigiria coordenação distribuída inclusive em fluxos que não necessitam de consistência imediata. Além disso, a validação precisa continuar funcionando durante períodos sem conectividade e a informação ao passageiro tolera defasagem de alguns segundos.
-
-- **Aplicar consistência eventual a todos os dados:** descartada porque operações relacionadas a saldo e resultados financeiros possuem invariantes que não podem depender apenas de convergência posterior.
-
-- **Manter todos os eventos permanentemente com os dados pessoais identificáveis para facilitar a auditoria:** descartada porque a retenção permanente de informações pessoais entraria em tensão com as exigências de tratamento e exclusão de dados pessoais do Envelope E. A auditabilidade financeira deve ser preservada sem depender da permanência desses dados identificáveis.
-
-**Consequências:**
-
-- **Positivas:** os subdomínios mantêm propriedade explícita sobre seus dados e podem evoluir seus modelos internos sem depender diretamente dos esquemas de outras capacidades; operações financeiras críticas podem utilizar consistência forte sem impor esse custo a todo o sistema; a consistência eventual permite a sincronização das operações realizadas durante períodos sem conectividade; modelos de leitura próprios evitam que consultas de passageiros sobrecarreguem os dados transacionais; e a separação entre histórico financeiro e dados pessoais permite preservar a auditabilidade exigida pela fiscalização sem tornar a retenção de dados pessoais condição para o recálculo.
-
-- **Negativas:** o mesmo fato pode existir em representações diferentes em mais de um subdomínio; consumidores podem visualizar temporariamente informações desatualizadas devido à consistência eventual; a sincronização das validações realizadas offline exige tratamento de duplicidade, ordenação e falhas de entrega; consultas que combinam informações pertencentes a vários subdomínios tornam-se mais complexas; e a separação entre informações pessoais e registros financeiros aumenta a complexidade do modelo de dados e dos processos de auditoria.
+**Negativas:** existem diferentes representações do mesmo fato no sistema; sincronizações podem apresentar atraso; operações offline exigem idempotência e tratamento de falhas; e o estado operacional mantido no cartão aumenta a responsabilidade e a complexidade da validação embarcada.

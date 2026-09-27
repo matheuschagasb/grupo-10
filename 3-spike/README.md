@@ -1,15 +1,30 @@
-# Spike: Destruição Criptográfica (Crypto-shredding) vs Trilha de Auditoria
-**ADR Comprovado:** ADR/0005-crypto-shredding-lgpd.md
+# Spike: separação entre dados pessoais e histórico financeiro auditável
 
-**O que este código prova:** 
-Este spike demonstra a viabilidade de manter um banco de dados imutável (*Event Sourcing*) para auditorias financeiras rigorosas, enquanto cumpre integralmente o direito ao esquecimento exigido pela LGPD. 
-Ele prova que, ao cifrar os dados sensíveis do passageiro (PII) no evento e guardar a chave em um repositório isolado, a exclusão exclusiva da chave anonimiza irreversivelmente a viagem sem alterar os valores e registros financeiros totais. 
+**ADR validado:** `2-arquitetura/adr/0005-decisao_arriscada.md`
 
-**Como rodar:**
-Certifique-se de ter o Python 3.12 instalado. Nenhuma biblioteca externa é necessária. Execute no terminal:
-`python3 exemplo.py`
+## Objetivo
 
-**O que aconteceria se a decisão estivesse errada:**
-Se optássemos por uma exclusão física tradicional (CRUD/`DELETE`) para atender à LGPD, o evento da viagem sumiria da base. 
-Ao recalcular o repasse mensal ou em uma auditoria do Tribunal de Contas, a soma de tarifas validadas não bateria com o dinheiro arrecadado, configurando indício de fraude e quebrando o requisito principal do Envelope E. 
-Por outro lado, se não apagássemos os dados para preservar a auditoria financeira, o consórcio enfrentaria multas milionárias por descumprimento da legislação de privacidade.
+Este spike valida a decisão de manter os fatos financeiros necessários à auditoria em um histórico imutável, enquanto os dados pessoais identificáveis permanecem em armazenamento separado.
+
+O objetivo é demonstrar que a remoção dos dados pessoais não impede a reconstrução do estado financeiro nem altera o resultado utilizado pela Conciliação.
+
+## O que o código demonstra
+
+O código implementa:
+
+- um armazenamento separado para dados pessoais;
+- um Event Store financeiro append-only;
+- eventos financeiros que armazenam apenas uma referência ao usuário;
+- reconstrução de uma projeção de Conciliação a partir dos eventos;
+- eliminação dos dados pessoais de um passageiro;
+- nova reconstrução da projeção após a eliminação;
+- processamento idempotente, evitando que o mesmo evento seja contabilizado duas vezes.
+
+## Como executar
+
+É necessário apenas Python 3.
+
+No diretório `3-spike`, execute:
+
+```bash
+python exemplo.py

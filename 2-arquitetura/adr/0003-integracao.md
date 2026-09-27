@@ -1,41 +1,42 @@
-# ADR 0003: isolar integrações com sistemas externos por portas e adaptadores
+# ADR 0003: isolar integrações externas por portas e adaptadores
 
 **Status:** aceito
 
-**Contexto:**  
-O sistema de transporte coletivo precisa se integrar com sistemas externos, incluindo banco, adquirente, operadoras e outros terceiros. Esses sistemas possuem contratos, protocolos e formatos de dados próprios, que não são controlados pela equipe responsável pelo sistema.
+## Contexto
 
-Alterações nesses contratos externos não devem se propagar diretamente para as regras internas de validação, cartões e recarga, conciliação ou demais subdomínios. Além disso, falhas ou indisponibilidade de um terceiro não devem comprometer capacidades que possam continuar operando de forma independente.
+O sistema precisa se integrar com banco, adquirente, operadoras e outros sistemas externos que possuem contratos, protocolos e formatos próprios.
 
-O Envelope E exige fiscalização por órgão regulador, aumentando a importância de controlar e rastrear as interações realizadas nas fronteiras externas.
+Esses detalhes não devem se espalhar pelas regras internas do sistema. Além disso, falhas ou mudanças de um terceiro devem ter impacto limitado sobre as demais capacidades.
 
-**Decisão:**  
-Isolar as integrações com banco, adquirente, operadoras e demais terceiros utilizando arquitetura hexagonal, representando as necessidades do sistema por portas e implementando um adaptador específico para cada integração externa.
+O Envelope E também exige rastreabilidade das interações externas para fins de fiscalização.
 
-As regras de domínio dependerão das portas definidas internamente, e não dos contratos, bibliotecas, protocolos ou formatos fornecidos pelos terceiros. Cada adaptador será responsável por traduzir entre o modelo interno e o contrato do sistema externo correspondente.
+## Decisão
 
-As integrações serão organizadas da seguinte forma:
+Utilizar Arquitetura Hexagonal nas fronteiras de integração, representando as necessidades do sistema por portas internas e implementando adaptadores específicos para cada sistema externo.
 
-- **Banco e adquirente:** adaptadores próprios encapsularão seus contratos e formatos, impedindo que detalhes dessas integrações façam parte das regras internas de cartões, recarga ou conciliação.
-- **Operadoras e demais sistemas externos:** cada integração será implementada por um adaptador correspondente à porta necessária pelo sistema, permitindo que mudanças externas permaneçam restritas à fronteira de integração.
-- **Auditoria:** as interações relevantes com terceiros deverão produzir registros que permitam identificar a operação realizada e seu resultado, de modo a sustentar a fiscalização sem espalhar essa responsabilidade pelas regras de domínio.
+| Integração | Decisão |
+|---|---|
+| **Banco / Adquirente** | Utilizar adaptadores próprios para traduzir contratos, mensagens e formatos externos para o modelo interno. |
+| **Operadoras** | Isolar protocolos e formatos específicos em adaptadores dedicados. |
+| **Sistemas legados** | Utilizar adaptadores para impedir que estruturas e regras do legado se propaguem para o domínio. |
+| **Auditoria** | Registrar as interações relevantes, seus identificadores, resultados e falhas para permitir rastreabilidade. |
 
-Chamadas síncronas serão utilizadas quando a operação exigir uma resposta imediata do terceiro. Quando não houver necessidade de resposta imediata, a comunicação poderá ser desacoplada por eventos ou processamento assíncrono, conforme as fronteiras estabelecidas na ADR 0001.
+As regras de negócio dependerão das portas definidas pelo próprio sistema, e não diretamente de bibliotecas, protocolos ou formatos pertencentes aos terceiros.
 
-Não será adotado um ESB como intermediário obrigatório para todas as integrações. Mediação centralizada será considerada apenas quando houver necessidade concreta de integrar sistemas heterogêneos com contratos e formatos impostos e quando os benefícios de tradução, roteamento ou aplicação centralizada de políticas justificarem seu custo.
+Chamadas síncronas serão utilizadas quando houver necessidade de resposta imediata. Quando essa resposta não for necessária, a integração poderá utilizar eventos ou processamento assíncrono conforme definido na ADR 0001.
 
-Falhas dos sistemas externos deverão permanecer contidas na fronteira de seus respectivos adaptadores. Capacidades que não dependam da resposta imediata do terceiro não deverão ser interrompidas apenas pela indisponibilidade dessa integração.
+Um ESB não será adotado como intermediário obrigatório. A utilização de mecanismos de mediação centralizada somente será considerada caso surja uma necessidade concreta de tradução, roteamento ou aplicação compartilhada de políticas entre várias integrações.
 
-**Alternativas consideradas:**
+Falhas externas devem permanecer contidas nos respectivos adaptadores sempre que possível.
 
-- **Integrar os sistemas externos diretamente às regras de domínio:** descartada porque faria as regras internas dependerem de contratos, formatos e tecnologias controlados por terceiros. Uma mudança externa poderia exigir alterações nas regras de negócio e ampliar o impacto das integrações sobre o restante do sistema.
+## Alternativas consideradas
 
-- **Adotar um ESB como intermediário obrigatório para todas as integrações:** descartada porque centralizaria o tráfego das integrações em um componente adicional, acrescentando custo, latência e um possível ponto de indisponibilidade. A quantidade e as características das integrações apresentadas não justificam tornar o barramento o estilo dominante.
+- **Integração direta com as regras de domínio:** descartada porque aumentaria o acoplamento com contratos e tecnologias controlados por terceiros.
+- **ESB obrigatório para todas as integrações:** descartado porque adicionaria complexidade, latência e dependência de um componente central sem necessidade suficiente no cenário atual.
+- **Integrações ponto a ponto sem uma fronteira comum:** descartadas porque espalhariam lógica de tradução e tratamento de falhas por vários subdomínios.
 
-- **Criar integrações ponto a ponto sem uma fronteira arquitetural comum:** descartada porque cada subdomínio passaria a conhecer diretamente os contratos externos de que necessita, espalhando lógica de tradução, tratamento de falhas e dependências de terceiros pelo sistema.
+## Consequências
 
-**Consequências:**
+**Positivas:** mudanças externas ficam concentradas nos adaptadores; as regras de domínio permanecem independentes dos terceiros; integrações podem ser substituídas e testadas isoladamente; e as interações externas tornam-se mais rastreáveis.
 
-- **Positivas:** as regras de domínio permanecem independentes das tecnologias e contratos dos terceiros; mudanças em banco, adquirente ou operadoras tendem a ficar concentradas nos respectivos adaptadores; integrações podem ser substituídas ou testadas sem depender diretamente dos sistemas externos; falhas externas podem ser isoladas na fronteira de integração; e o registro das interações externas favorece a rastreabilidade necessária à fiscalização.
-
-- **Negativas:** cada sistema externo exige desenvolvimento e manutenção de seu próprio adaptador; a tradução entre modelos internos e contratos externos adiciona código e custo de desenvolvimento; mudanças incompatíveis nos contratos dos terceiros ainda exigem atualização dos adaptadores; mecanismos assíncronos, quando utilizados, aumentam a complexidade de tratamento de falhas e consistência; e não utilizar um barramento central significa que políticas comuns às integrações precisam ser padronizadas sem depender de um único intermediário.
+**Negativas:** cada integração exige manutenção de seu próprio adaptador; transformações entre modelos aumentam a quantidade de código; e alterações incompatíveis nos contratos externos ainda exigem atualização dos adaptadores.

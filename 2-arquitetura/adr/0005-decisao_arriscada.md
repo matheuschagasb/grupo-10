@@ -2,49 +2,50 @@
 
 **Status:** aceito
 
-**Contexto:**  
-O sistema precisa permitir que operações financeiras relacionadas a cartões, recargas e conciliação sejam auditadas e reconstruídas. O fechamento financeiro também deve poder ser recalculado utilizando as regras vigentes na data de cada viagem, exigindo a preservação do histórico necessário para reproduzir os resultados.
+## Contexto
 
-O Envelope E acrescenta a fiscalização por órgão regulador e requisitos relacionados à LGPD. Isso cria uma tensão arquitetural: a preservação imutável de eventos favorece a auditabilidade e a reconstrução do histórico, enquanto dados pessoais identificáveis podem estar sujeitos a requisitos de eliminação e não devem permanecer indefinidamente em um armazenamento imutável apenas para viabilizar a auditoria financeira.
+O sistema precisa preservar informações suficientes para reconstruir operações financeiras, recalcular fechamentos e permitir auditoria dos repasses.
 
-Aplicar Event Sourcing de forma indiscriminada aumentaria a complexidade de armazenamento, versionamento, reprocessamento e proteção dos dados. Por isso, seu uso deve ser limitado às capacidades em que a reconstrução histórica possui valor direto para o caso.
+Ao mesmo tempo, o Envelope E exige tratamento adequado dos dados pessoais conforme a LGPD. Armazenar dados pessoais identificáveis diretamente em um histórico imutável criaria conflito com necessidades de retenção e eliminação.
 
-**Decisão:**  
-Adotar Event Sourcing de forma localizada em Cartões/Recargas e Conciliação para os fatos financeiros que precisam ser preservados para auditoria, reconstrução de saldo e recálculo do fechamento.
+Como Event Sourcing aumenta a complexidade de persistência, projeções e reprocessamento, seu uso deve ser restrito às partes do sistema que realmente precisam de reconstrução histórica.
 
-Os eventos financeiros serão armazenados de forma append-only e representarão os fatos necessários para reconstruir o estado financeiro. Correções não apagarão nem alterarão eventos anteriores; quando necessário, serão representadas por novos eventos de reversão ou compensação.
+## Decisão
 
-Dados pessoais identificáveis não serão armazenados diretamente no fluxo permanente de eventos financeiros quando não forem necessários para a reconstrução do resultado. Quando uma operação precisar estar associada a uma pessoa, o evento utilizará um identificador de referência, enquanto os dados pessoais correspondentes permanecerão fora do armazenamento imutável e seguirão seu próprio ciclo de retenção e eliminação.
+Adotar Event Sourcing de forma localizada em Cartões/Recarga e Conciliação, apenas para os fatos financeiros necessários à auditoria, reconstrução de saldo e recálculo do fechamento.
 
-O Event Sourcing não será utilizado como mecanismo geral de persistência dos demais subdomínios. Capacidades que necessitam apenas do estado atual continuarão utilizando seus modelos de persistência adequados às decisões das ADRs anteriores.
+Os eventos financeiros serão armazenados em formato append-only e representarão fatos ocorridos no sistema. Correções serão registradas por novos eventos de compensação ou reversão, sem alterar os eventos anteriores.
 
-As projeções e processos que consumirem os eventos deverão ser reconstruíveis e tratar reprocessamento sem repetir indevidamente os efeitos de uma operação já executada.
+Os dados pessoais identificáveis não serão armazenados diretamente nesses eventos. Quando for necessário relacionar uma operação a uma pessoa, o evento manterá apenas um identificador de referência, enquanto os dados pessoais ficarão em armazenamento separado.
 
-Antes de consolidar essa decisão na implementação, será produzido um código pequeno para verificar a viabilidade da separação entre o histórico financeiro imutável e os dados pessoais identificáveis.
+Dessa forma, os dados pessoais poderão seguir seu próprio ciclo de retenção e eliminação sem apagar os fatos financeiros necessários à auditoria.
 
-O código deverá demonstrar pelo menos o seguinte cenário:
+As projeções geradas a partir dos eventos deverão poder ser reconstruídas e reprocessadas sem produzir efeitos financeiros duplicados.
 
-1. registrar eventos financeiros associados a um identificador, sem armazenar os dados pessoais diretamente nesses eventos;
-2. reconstruir o estado financeiro a partir do histórico;
-3. produzir uma projeção utilizada pela conciliação;
-4. remover os dados pessoais associados ao identificador;
-5. reconstruir novamente o histórico financeiro e demonstrar que a auditoria e o recálculo continuam possíveis sem recuperar os dados pessoais eliminados;
-6. reprocessar os mesmos eventos sem duplicar o resultado financeiro.
+O Event Sourcing não será utilizado como mecanismo de persistência geral dos demais subdomínios.
 
-A decisão será considerada viável se o código demonstrar que a eliminação dos dados pessoais não impede a reconstrução do estado financeiro nem altera o resultado da conciliação.
+## Alternativas consideradas
 
-**Alternativas consideradas:**
+- **Armazenar apenas o estado atual:** descartado porque dificultaria reconstruir o estado financeiro a partir dos fatos que produziram o resultado.
+- **Aplicar Event Sourcing em todo o sistema:** descartado porque aumentaria a complexidade sem benefício equivalente para todos os subdomínios.
+- **Armazenar dados pessoais diretamente nos eventos financeiros:** descartado porque vincularia a auditoria financeira à retenção permanente desses dados.
+- **Excluir eventos financeiros junto com os dados pessoais:** descartado porque poderia comprometer a integridade do histórico e impedir auditoria e recálculo.
 
-- **Armazenar apenas o estado atual e manter uma tabela de auditoria:** descartada porque o histórico de alterações não oferece, por si só, a mesma capacidade de reconstruir o estado a partir dos fatos financeiros que produziram o resultado.
+## Consequências
 
-- **Adotar Event Sourcing em todos os subdomínios:** descartada porque capacidades que necessitam apenas do estado atual não justificam o custo adicional de armazenamento, versionamento de eventos, projeções e reprocessamento. Além disso, ampliar o armazenamento imutável aumentaria a dificuldade de tratamento dos dados pessoais.
+**Positivas:** permite reconstrução do estado financeiro; facilita auditoria e recálculo; preserva o histórico das operações; e separa os dados pessoais do histórico financeiro permanente.
 
-- **Armazenar dados pessoais diretamente nos eventos financeiros:** descartada porque vincularia a reconstrução financeira à retenção desses dados e criaria tensão entre a imutabilidade do histórico e os requisitos de eliminação de dados pessoais.
+**Negativas:** exige versionamento de eventos, manutenção de projeções, tratamento de reprocessamento e maior controle sobre a separação entre identificadores e dados pessoais.
 
-- **Eliminar eventos financeiros quando houver solicitação de eliminação dos dados pessoais associados:** descartada porque remover fatos do histórico poderia comprometer sua integridade e impedir a reconstrução e o recálculo exigidos para auditoria.
+## Validação por Spike
 
-**Consequências:**
+A viabilidade desta decisão será validada por um código de prova de conceito que deverá demonstrar:
 
-- **Positivas:** o estado financeiro pode ser reconstruído a partir dos fatos registrados; o fechamento pode ser recalculado utilizando o histórico preservado; eventos anteriores não precisam ser alterados para representar correções; a fiscalização dispõe de um histórico auditável das operações financeiras; e a separação entre eventos financeiros e dados pessoais permite que a eliminação destes não destrua o histórico necessário à auditoria.
+1. registro de eventos financeiros sem armazenar dados pessoais diretamente no histórico;
+2. reconstrução do estado financeiro a partir dos eventos;
+3. geração de uma projeção utilizada pela Conciliação;
+4. remoção dos dados pessoais associados ao identificador;
+5. reconstrução do estado financeiro após essa remoção;
+6. reprocessamento dos eventos sem duplicar o resultado financeiro.
 
-- **Negativas:** a equipe precisa lidar com versionamento e evolução dos eventos ao longo do tempo; projeções precisam ser construídas e mantidas para consultas; o armazenamento do histórico cresce continuamente; consumidores e projeções precisam tratar reprocessamento e duplicidade; a separação entre identificadores e dados pessoais aumenta a complexidade do modelo; e a equipe passa a operar dois ciclos distintos de dados, um relacionado ao histórico financeiro e outro ao tratamento dos dados pessoais.
+A decisão será considerada viável se a remoção dos dados pessoais não impedir a reconstrução do histórico financeiro nem alterar o resultado da Conciliação.
