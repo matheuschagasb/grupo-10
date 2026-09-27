@@ -22,9 +22,20 @@ O código implementa:
 
 ## Como executar
 
-É necessário apenas Python 3.
+É necessário apenas Python 3.12, sem bibliotecas externas.
 
 No diretório `3-spike`, execute:
 
 ```bash
-python exemplo.py
+python3 exemplo.py
+```
+
+A saída impressa no terminal deve ser idêntica ao conteúdo de `saida-esperada.txt`.
+
+## O que aconteceria se a decisão estivesse errada
+
+Se, em vez desta separação, o sistema tivesse optado por uma **exclusão física tradicional** (`DELETE`) do evento inteiro para atender a um pedido de esquecimento da LGPD, o evento da viagem desapareceria do histórico financeiro. Ao recalcular o repasse mensal, ou durante uma auditoria do Tribunal de Contas, a soma das tarifas validadas não bateria mais com o valor total arrecadado — configurando um indício de inconsistência ou fraude e quebrando diretamente a exigência de reconstrução auditável do Envelope E.
+
+Por outro lado, se o sistema optasse por **nunca apagar nenhum dado pessoal**, para preservar a auditoria financeira a qualquer custo, o consórcio ficaria exposto a sanções por descumprimento do direito ao esquecimento previsto na LGPD.
+
+A separação entre identificador de referência (mantido no Event Store) e dado pessoal (mantido à parte, e elimináveis independentemente) é o que permite atender às duas exigências ao mesmo tempo, sem sacrificar nenhuma delas.
