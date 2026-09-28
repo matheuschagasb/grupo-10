@@ -1,4 +1,10 @@
-from datetime import datetime
+"""Spike do ADR 0005: separar dados pessoais dos eventos financeiros.
+
+Prova que eliminar o dado pessoal de um passageiro nao altera o total
+conciliado. Conceitos: ABREU (2026), Estilos Arquiteturais de Software,
+cap. 15 (Event Sourcing), secoes 15.2 e 15.7. Codigo escrito para este
+projeto; nao e adaptacao da listagem 15.1 do livro.
+"""
 
 
 class CadastroPessoalService:
@@ -60,7 +66,7 @@ def registrar_viagem(usuario_id, valor):
 
     evento = {
         "evento_id": f"evt_bus_{numero:05d}",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": "2026-01-01T00:00:00",
         "tipo_evento": "TarifaDebitada",
         "usuario_id_ref": usuario_id,
         "valor_tarifa": valor
