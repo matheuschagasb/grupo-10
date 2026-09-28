@@ -1,41 +1,25 @@
-# Spike: separação entre dados pessoais e histórico financeiro auditável
+# Spike: dado pessoal fora do histórico financeiro
 
-**ADR validado:** `2-arquitetura/adr/0005-decisao_arriscada.md`
+**Prova o ADR 0005** (`2-arquitetura/adr/0005-decisao-arriscada.md`).
 
-## Objetivo
+## O que prova
 
-Este spike valida a decisão de manter os fatos financeiros necessários à auditoria em um histórico imutável, enquanto os dados pessoais identificáveis permanecem em armazenamento separado.
+Os fatos financeiros ficam em um Event Store append-only que guarda só uma referência ao passageiro; nome e CPF ficam em um cadastro separado. Eliminar o cadastro de um passageiro não muda o total conciliado (R$ 13,50 em 3 viagens) nem impede reconstruir a projeção, e reprocessar os mesmos eventos não duplica o resultado.
 
-O objetivo é demonstrar que a remoção dos dados pessoais não impede a reconstrução do estado financeiro nem altera o resultado utilizado pela Conciliação.
+## Como rodar
 
-## O que o código demonstra
-
-O código implementa:
-
-- um armazenamento separado para dados pessoais;
-- um Event Store financeiro append-only;
-- eventos financeiros que armazenam apenas uma referência ao usuário;
-- reconstrução de uma projeção de Conciliação a partir dos eventos;
-- eliminação dos dados pessoais de um passageiro;
-- nova reconstrução da projeção após a eliminação;
-- processamento idempotente, evitando que o mesmo evento seja contabilizado duas vezes.
-
-## Como executar
-
-É necessário apenas Python 3.12, sem bibliotecas externas.
-
-No diretório `3-spike`, execute:
+Python 3.12, só biblioteca padrão, na pasta `3-spike`:
 
 ```bash
 python3 exemplo.py
 ```
 
-A saída impressa no terminal deve ser idêntica ao conteúdo de `saida-esperada.txt`.
+A saída deve ser idêntica a `saida-esperada.txt` (quatro cenários: A processamento, B eliminação, C reconstrução, D idempotência).
 
-## O que aconteceria se a decisão estivesse errada
+## Se a decisão estivesse errada
 
-Se, em vez desta separação, o sistema tivesse optado por uma **exclusão física tradicional** (`DELETE`) do evento inteiro para atender a um pedido de esquecimento da LGPD, o evento da viagem desapareceria do histórico financeiro. Ao recalcular o repasse mensal, ou durante uma auditoria do Tribunal de Contas, a soma das tarifas validadas não bateria mais com o valor total arrecadado — configurando um indício de inconsistência ou fraude e quebrando diretamente a exigência de reconstrução auditável do Envelope E.
+Se o pedido de eliminação apagasse o evento inteiro, a soma das tarifas deixaria de bater na auditoria do Tribunal de Contas. Se o dado pessoal ficasse dentro do evento, a auditoria dependeria da retenção permanente desse dado, o que conflita com o pedido de eliminação, ressalvadas as hipóteses de conservação previstas na LGPD (ABREU, 2026, §15.7; Lei 13.709/2018).
 
-Por outro lado, se o sistema optasse por **nunca apagar nenhum dado pessoal**, para preservar a auditoria financeira a qualquer custo, o consórcio ficaria exposto a sanções por descumprimento do direito ao esquecimento previsto na LGPD.
+## Limites
 
-A separação entre identificador de referência (mantido no Event Store) e dado pessoal (mantido à parte, e elimináveis independentemente) é o que permite atender às duas exigências ao mesmo tempo, sem sacrificar nenhuma delas.
+O spike simula só Event Store e cadastro em memória; não cobre cópias de segurança nem os outros armazenamentos citados no ADR.
