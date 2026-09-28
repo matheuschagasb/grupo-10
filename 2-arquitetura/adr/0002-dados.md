@@ -1,52 +1,19 @@
-# ADR 0002: distribuir a propriedade dos dados por subdomínio
+# ADR 0002: atribuir cada dado a um único subdomínio dono
 
 **Status:** aceito
 
-## Contexto
+**Contexto:** Saldo e recarga exigem consistência forte, a validação embarcada decide sem rede, a telemetria chega continuamente e a conciliação precisa de histórico para recalcular. Uma base compartilhada acoplaria todos os subdomínios. O Envelope E exige que o histórico financeiro não dependa de dados pessoais permanentes.
 
-O sistema possui dados com diferentes requisitos de consistência, volume e retenção. Cartões e recargas lidam com saldo financeiro, a validação precisa continuar funcionando durante períodos sem conexão, a telemetria recebe dados continuamente e a conciliação precisa preservar histórico suficiente para auditoria e recálculo.
+**Decisão:** Cada dado tem um único subdomínio escritor, acessado pelos demais só por interface publicada ou evento, com consistência forte apenas em saldo, recarga e fechamento. Cartões e Recarga é dono de cartões, saldo, recargas, perfil de gratuidade, sincronização das validações e Cadastro de Passageiros (dados pessoais); a Conciliação, das regras tarifárias versionadas e dos fechamentos; Telemetria, Informação ao Passageiro e Atendimento, dos seus próprios dados.
 
-Uma base compartilhada entre todas as capacidades aumentaria o acoplamento. Ao mesmo tempo, a separação dos dados exige definir claramente quem é responsável por cada informação e onde será utilizada consistência forte ou eventual.
+**Alternativas consideradas:**
+- Banco único compartilhado: descartado por acoplar os subdomínios.
+- Consistência forte global: descartada por exigir conexão contínua, inviável no ônibus.
+- Consistência eventual em tudo: descartada porque saldo e fechamento têm invariantes financeiras.
+- Cadastro de Passageiros dentro do Atendimento: descartado porque o Atendimento é de baixo volume e não é dono do cartão a que o cadastro se liga.
 
-O Envelope E também exige que o histórico financeiro auditável não dependa da retenção permanente de dados pessoais identificáveis.
+**Consequências:**
+- Positivas: menor acoplamento; consistência forte só onde há dinheiro; consultas de passageiros não competem com dados transacionais; o dado pessoal tem dono único e ciclo de retenção próprio.
+- Negativas: o mesmo fato tem representações diferentes; sincronizações têm atraso; Cartões e Recarga concentra várias responsabilidades e pode virar gargalo de evolução.
 
-## Decisão
-
-Distribuir a propriedade dos dados conforme as fronteiras definidas na ADR 0001. Cada subdomínio será responsável pela escrita de seus próprios dados e os demais deverão acessá-los apenas por interfaces ou eventos.
-
-| Subdomínio | Propriedade dos dados | Consistência |
-|---|---|---|
-| **Cartões e Recarga** | Cartões, saldos, recargas, movimentações financeiras e o perfil de gratuidade ou desconto de cada cartão. | Forte nas operações que alteram saldo. |
-| **Validação Embarcada** | Dados mínimos para operação offline e validações ainda não sincronizadas. | Local durante a desconexão e eventual com o backend. |
-| **Telemetria** | Posições e demais dados enviados pela frota. | Assíncrona por eventos. |
-| **Informação ao Passageiro** | Modelos de leitura derivados da telemetria. | Eventual, com atraso de alguns segundos aceitável. |
-| **Conciliação** | Fechamentos, resultados, regras tarifárias versionadas por período de vigência e informações necessárias para auditoria e recálculo. | Forte na consolidação financeira. |
-| **Atendimento** | Informações próprias do atendimento e o registro de quem alterou o quê. | Consulta dados externos por interfaces publicadas pelos respectivos proprietários. |
-
-O perfil de gratuidade ou desconto (estudante, idoso, pessoa com deficiência) pertence a Cartões e Recarga. O Atendimento recebe o pedido de cadastro e o encaminha pela interface publicada por Cartões e Recarga, sem escrever diretamente nesses dados. O desconto é aplicado como regra tarifária vigente, conforme o ADR 0005.
-
-Toda alteração feita no Atendimento (cadastro de gratuidade, segunda via, contestação, correção de cadastro) gera um registro append-only com quem alterou, qual campo ou item foi alterado e quando, e é publicada como evento de alteração. O registro guarda apenas a referência ao passageiro, e não seus dados pessoais, para não conflitar com o ADR 0005.
-
-Para permitir validação durante períodos sem conectividade, o cartão manterá o **estado operacional necessário à utilização offline**, incluindo o saldo utilizado pela validação e informações de controle da operação.
-
-Quando uma passagem for aceita, o validador atualizará esse estado no cartão e registrará localmente a validação. Dessa forma, outro validador poderá obter o estado atualizado diretamente do cartão mesmo sem conexão com o backend.
-
-Quando a conectividade retornar, as operações registradas localmente serão sincronizadas com Cartões e Recarga por eventos. Cada operação financeira possuirá identificador único e será processada de forma idempotente, evitando aplicação duplicada em casos de reenvio.
-
-Entre subdomínios será utilizada consistência eventual sempre que não houver necessidade de resposta imediata. Consistência forte ficará limitada às operações que possuem invariantes financeiras.
-
-Os dados pessoais identificáveis permanecerão separados dos fatos financeiros necessários à auditoria, permitindo ciclos distintos de retenção e exclusão.
-
-## Alternativas consideradas
-
-- **Banco único compartilhado:** descartado por aumentar o acoplamento entre os subdomínios.
-- **Consistência forte global:** descartada porque dependeria de comunicação contínua, incompatível com a operação offline dos ônibus.
-- **Consistência eventual para todos os dados:** descartada porque saldo, recarga e consolidação financeira possuem invariantes que precisam ser preservadas.
-- **Manter apenas uma cópia do saldo central nos validadores:** descartado porque diferentes ônibus offline poderiam tomar decisões utilizando versões desatualizadas do mesmo saldo.
-- **Armazenar dados pessoais diretamente no histórico financeiro permanente:** descartado por criar conflito entre a necessidade de auditoria e o ciclo de retenção e eliminação previsto para dados pessoais.
-
-## Consequências
-
-**Positivas:** reduz o acoplamento entre capacidades; permite operação offline; mantém consistência forte onde ela é necessária; evita que consultas da Informação ao Passageiro sobrecarreguem dados transacionais; e separa o histórico financeiro dos dados pessoais.
-
-**Negativas:** existem diferentes representações do mesmo fato no sistema; sincronizações podem apresentar atraso; operações offline exigem idempotência e tratamento de falhas; e o estado operacional mantido no cartão aumenta a responsabilidade e a complexidade da validação embarcada.
+**Fontes:** ABREU (2026): §9.2 (banco por serviço), §11.2 (consistência eventual e idempotência), §14.2 (modelo de leitura). Premissas de dimensionamento e requisitos do caso Ônibus (enunciado "Um problema, cinco realidades"); Envelope E.
