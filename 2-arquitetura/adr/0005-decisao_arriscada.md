@@ -20,6 +20,10 @@ Os dados pessoais identificáveis não serão armazenados diretamente nesses eve
 
 Dessa forma, os dados pessoais poderão seguir seu próprio ciclo de retenção e eliminação sem apagar os fatos financeiros necessários à auditoria.
 
+As regras tarifárias (valor da tarifa, gratuidades e descontos, divisão entre operadoras) são definidas pelo órgão gestor e pertencem à Conciliação, conforme o ADR 0002. Elas são versionadas por período de vigência, com data de início e de fim, e nunca são sobrescritas: uma mudança cria uma nova versão. O fechamento seleciona a versão vigente na data de cada viagem, o que permite recalcular o mês sem alterar os eventos originais.
+
+As contestações do repasse (prazo de 30 dias), registradas pelo Atendimento, reexecutam o pipeline da Conciliação sobre os mesmos eventos e as regras vigentes na data. Qualquer ajuste resultante entra como novo evento de compensação.
+
 As projeções geradas a partir dos eventos deverão poder ser reconstruídas e reprocessadas sem produzir efeitos financeiros duplicados.
 
 O Event Sourcing não será utilizado como mecanismo de persistência geral dos demais subdomínios.
@@ -35,7 +39,7 @@ O Event Sourcing não será utilizado como mecanismo de persistência geral dos 
 
 **Positivas:** permite reconstrução do estado financeiro; facilita auditoria e recálculo; preserva o histórico das operações; e separa os dados pessoais do histórico financeiro permanente.
 
-**Negativas:** exige versionamento de eventos, manutenção de projeções, tratamento de reprocessamento e maior controle sobre a separação entre identificadores e dados pessoais.
+**Negativas:** exige versionamento de eventos e das regras tarifárias, manutenção de projeções, tratamento de reprocessamento e maior controle sobre a separação entre identificadores e dados pessoais.
 
 ## Validação por Spike
 
