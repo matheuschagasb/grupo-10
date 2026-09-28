@@ -1,105 +1,37 @@
-# Respostas às Perguntas Obrigatórias
+# Respostas às cinco perguntas obrigatórias do caso Ônibus
 
-## 1. Como o validador aceita passagem sem rede e detecta duplicidade depois?
+## 1. Como o validador aceita a passagem sem rede, e como o sistema descobre depois que a mesma passagem foi usada em dois ônibus?
 
-A validação da passagem ocorre localmente no equipamento embarcado. O validador mantém as regras e os dados mínimos necessários para decidir se uma passagem pode ser aceita, sem depender de uma chamada ao backend. Dessa forma, a operação consegue responder em até 300 ms mesmo durante períodos de até quatro horas sem conexão.
+**Aceitar sem rede.** A decisão de aceitar ou recusar roda no próprio validador, com regras e dados mínimos locais, organizada em Arquitetura Hexagonal para isolar leitor de cartão, armazenamento e comunicação. O cartão carrega o saldo operacional e um número de sequência incrementado a cada uso, então o segundo ônibus lê o estado já atualizado mesmo sem rede. Sem conexão, as validações ficam em fila local por até 4 h.
 
-Internamente, a aplicação embarcada utiliza Arquitetura Hexagonal para separar a regra de validação dos mecanismos de leitura do cartão, armazenamento local e comunicação com a nuvem.
+**Descobrir depois.** Quando a rede volta, as validações sobem por evento. Cartões e Recarga detecta sequências repetidas para o mesmo cartão vindas de validadores diferentes e emite um evento de divergência para bloqueio e ajuste. A idempotência dos consumidores trata apenas o reenvio da mesma mensagem, e não o uso em dois ônibus.
 
-Cada validação gera uma operação com identificador único. Além disso, o validador mantém localmente o controle das utilizações já realizadas pelo cartão durante a operação, permitindo aplicar a regra de anti-duplicidade antes de liberar novamente uma passagem.
+**Sustentação:** ADR 0008, ADR 0001, ADR 0002; C4 Contêineres (Validador Embarcado, Cartões e Recarga, Barramento de Eventos).
 
-Enquanto o ônibus estiver sem conexão, as validações ficam armazenadas localmente. Quando a rede retorna, essas operações são enviadas de forma assíncrona ao backend por meio de eventos.
+## 2. Como o saldo do cartão fica consistente entre recarga no aplicativo e uso no ônibus, com atraso de sincronização?
 
-Como a entrega de uma mensagem pode ocorrer mais de uma vez em situações de falha ou perda de confirmação, os consumidores do backend também são idempotentes. Assim, um evento com identificador já processado não produz novamente seus efeitos.
+O saldo central é de Cartões e Recarga, que tem consistência forte nas operações que o alteram. No ônibus, o saldo operacional vive no cartão, e o validador o atualiza a cada uso. A recarga do aplicativo só é creditada depois que o adaptador do banco confirma a liquidação, fica como crédito pendente no backend e é gravada no cartão no primeiro uso em um validador que já sincronizou a lista de pendências. Cada recarga tem identificador único, aplicado uma só vez mesmo com reenvio. O custo assumido é que a recarga do aplicativo pode demorar até esse primeiro uso.
 
-**Sustentação:** ADR 0001, ADR 0002, ADR 0004 e Diagrama C4 de Contêineres.
+**Sustentação:** ADR 0008, ADR 0002, ADR 0003; C4 Contêineres.
 
----
+## 3. Como a telemetria escala no pico sem derrubar o restante do sistema?
 
-## 2. Como manter a consistência do saldo do cartão entre a aplicação e o ônibus com atraso de sincronização?
+A Telemetria é uma unidade independente, com broker persistente próprio, separado do barramento de eventos financeiros. A ingestão só publica no broker, e um consumidor idempotente grava a série temporal e atualiza o modelo de leitura, então um consumidor lento não trava a ingestão. A Informação ao Passageiro lê apenas o modelo de leitura (CQRS) e escala sozinha no rush. O pico previsto é de cerca de 400 posições por segundo (5 vezes as 80 da média, premissas do caso). Validação, Recarga e Conciliação não compartilham broker nem armazenamento com a telemetria.
 
-A consistência não pode depender apenas do backend, pois o ônibus precisa continuar validando passagens mesmo quando permanece várias horas sem conexão. Se cada validador mantivesse apenas uma cópia independente do saldo central, dois ônibus offline poderiam aceitar gastos com base no mesmo saldo desatualizado.
+**Sustentação:** ADR 0007, ADR 0004, ADR 0001; C4 Contêineres.
 
-Para evitar esse problema, o cartão é utilizado como portador do **saldo operacional necessário à validação offline**, juntamente com informações de controle da última operação. O validador lê o estado do cartão, verifica as regras da passagem e, quando aceita a utilização, registra a operação no próprio cartão e no armazenamento local do equipamento.
+## 4. Como o repasse mensal é recalculado se uma regra de tarifa mudou no meio do mês?
 
-Dessa forma, ao utilizar o mesmo cartão em outro ônibus, o novo validador lê o estado já atualizado no próprio cartão, mesmo que nenhum dos dois veículos esteja conectado ao backend.
+As regras tarifárias pertencem à Conciliação e são versionadas por período de vigência, nunca sobrescritas. Os fatos financeiros ficam imutáveis, com suas datas. O fechamento é um pipeline de etapas independentes: recuperar os eventos do período, validar, selecionar a regra vigente na data de cada viagem, calcular, consolidar por operadora e publicar o fechamento. Se uma regra muda, o pipeline roda de novo sobre os mesmos eventos e a versão vigente em cada data, e o ajuste entra como evento de compensação. A contestação registrada pelo Atendimento aciona o mesmo reprocessamento.
 
-O subdomínio de Cartões e Recarga continua sendo responsável pelo histórico financeiro, pelas recargas e pela consolidação central. Quando houver conectividade, as operações realizadas nos ônibus são sincronizadas por eventos e processadas de forma idempotente.
+**Sustentação:** ADR 0002, ADR 0005, ADR 0006, ADR 0001; C4 Componentes.
 
-As recargas também recebem identificadores únicos para impedir que uma mesma operação seja aplicada mais de uma vez durante reenvios ou falhas de comunicação.
+## 5. Como o histórico de viagens de uma pessoa é apagado quando ela pede, sem quebrar a conciliação financeira?
 
-Assim, existem dois níveis complementares:
+Os eventos financeiros guardam apenas uma referência opaca ao passageiro, sem nome, CPF nem hash de CPF. Nome, CPF e demais dados ficam no Cadastro de Passageiros. Quando o pedido chega pelo Atendimento, o cadastro e o vínculo da referência são apagados, e o mesmo vale para as cópias em Banco de Cartões, Modelo de Leitura e registro do Atendimento. Os eventos não são tocados, então o valor, a data, a regra e a operadora de cada viagem continuam reconstruíveis, e o total do repasse não muda. O spike prova exatamente isso: o total conciliado é o mesmo antes, depois da eliminação e depois do reprocessamento.
 
-- no ambiente embarcado, o cartão mantém o estado necessário para impedir gastos duplicados durante a operação offline;
-- no backend, Cartões e Recarga mantém o histórico financeiro central, realiza a reconciliação e garante que cada operação sincronizada seja aplicada uma única vez.
+**Limites assumidos.** A conservação de dados pode ser exigida por lei em certas hipóteses, e a referência ainda liga as viagens entre si, o que é risco residual de reidentificação a validar com a responsável por conformidade. Cópias de segurança precisam de prazo de expiração definido.
 
-**Sustentação:** ADR 0002, ADR 0004 e Diagrama C4 de Contêineres.
+**Complemento, pergunta do Envelope E** ("Como vocês guardam tudo para sempre e ainda assim apagam o que a lei manda apagar?"): guarda-se para sempre o fato financeiro, que não identifica ninguém, e apaga-se o dado pessoal, que tem ciclo de retenção próprio.
 
----
-
-## 3. Como a telemetria escala no pico sem derrubar o resto do sistema?
-
-A Telemetria da Frota é tratada como uma capacidade independente das demais partes do sistema. Isso permite que seus recursos sejam aumentados sem obrigar Validação, Cartões/Recarga, Conciliação ou Atendimento a escalar junto com ela.
-
-A ingestão das posições utiliza Arquitetura Orientada a Eventos. As posições recebidas são colocadas em um mecanismo de mensageria persistente antes do processamento pelos consumidores.
-
-Essa separação permite que a ingestão continue recebendo dados mesmo quando algum consumidor estiver temporariamente mais lento. Em caso de falha de processamento, as mensagens podem ser entregues novamente, e os consumidores devem tratar reprocessamento de forma idempotente.
-
-O sistema precisa absorver aproximadamente 80 posições por segundo em condições normais e até cinco vezes esse volume nos períodos de pico. Como a Telemetria possui uma unidade de implantação própria, ela pode ser escalada de forma independente para atender esse aumento.
-
-Para as consultas dos passageiros, a solução utiliza CQRS. A Telemetria alimenta modelos de leitura próprios utilizados pela Informação ao Passageiro, que tolera alguns segundos de defasagem.
-
-Com isso, um pico de consultas no aplicativo não aumenta diretamente a carga sobre o fluxo responsável por receber as posições dos ônibus.
-
-**Sustentação:** ADR 0001, ADR 0002, ADR 0004 e Diagrama C4 de Contêineres.
-
----
-
-## 4. Como recalcular o repasse mensal se a regra de divisão mudar no meio do mês?
-
-O processo de Repasse e Conciliação foi projetado para ser reconstruível e reexecutável.
-
-Os fatos financeiros necessários ao fechamento são preservados com suas datas, enquanto as regras utilizadas no cálculo possuem período de vigência. Dessa forma, o sistema consegue determinar qual regra deve ser utilizada para cada viagem durante um recálculo.
-
-O processamento da Conciliação utiliza Pipes and Filters e é dividido em etapas independentes:
-
-1. recuperar os fatos financeiros do período;
-2. validar os dados recebidos;
-3. identificar a regra vigente na data de cada viagem;
-4. calcular os valores correspondentes;
-5. consolidar os resultados por operadora;
-6. gerar o fechamento financeiro.
-
-Se uma regra de divisão for alterada, o pipeline pode ser executado novamente. O componente responsável pela seleção das regras consulta a versão aplicável à data de cada viagem, permitindo reconstruir o resultado do mês sem alterar os fatos financeiros originais.
-
-Event Sourcing é utilizado de forma localizada para preservar os fatos financeiros necessários à reconstrução e à auditoria, enquanto Pipes and Filters organiza o processo de recálculo.
-
-**Sustentação:** ADR 0001, ADR 0002, ADR 0005 e Diagrama C4 de Componentes.
-
----
-
-## 5. Como guardar tudo para o Tribunal de Contas e ainda apagar o que a LGPD manda apagar?
-
-A arquitetura separa as informações necessárias à auditoria financeira dos dados pessoais identificáveis dos passageiros.
-
-Os fatos financeiros necessários para reconstrução de saldos, conciliação e fiscalização são armazenados em um histórico append-only. Esse histórico contém informações como identificador do evento, valor, data, tipo da operação e uma referência ao cadastro relacionado, mas não precisa armazenar diretamente nome, CPF ou outros dados pessoais do passageiro.
-
-Os dados pessoais ficam em um armazenamento separado, com ciclo de retenção e exclusão próprio.
-
-Quando uma solicitação de eliminação de dados pessoais for aplicável, os dados identificáveis podem ser removidos dessa base sem alterar os fatos financeiros já registrados.
-
-Após a eliminação, o histórico financeiro continua permitindo responder perguntas como:
-
-- qual valor foi debitado;
-- quando a operação ocorreu;
-- qual regra foi utilizada;
-- qual operadora participou;
-- como o valor do fechamento foi calculado.
-
-O que deixa de ser possível, quando o dado pessoal correspondente é eliminado, é recuperar a identidade do passageiro apenas a partir do histórico financeiro.
-
-Por isso, Event Sourcing é utilizado somente nos subdomínios em que a reconstrução do histórico realmente é necessária, principalmente Cartões/Recarga e Conciliação. Ele não é utilizado como mecanismo geral para armazenar permanentemente todos os dados do sistema.
-
-Essa separação permite manter a trilha necessária para fiscalização do Tribunal de Contas sem tornar a permanência dos dados pessoais uma condição para a auditoria financeira.
-
-**Sustentação:** ADR 0002, ADR 0005 e Diagrama C4 de Componentes.
+**Sustentação:** ADR 0005, ADR 0002, ADR 0006; C4 Componentes; spike `3-spike/exemplo.py`.
