@@ -8,7 +8,13 @@ Os fatos financeiros ficam em um Event Store append-only que guarda só uma refe
 
 ## Como rodar
 
-Python 3.12, só biblioteca padrão, na pasta `3-spike`:
+Python 3.12, somente com a biblioteca padrão, na pasta `3-spike`:
+
+```bash
+python exemplo.py
+```
+
+Em sistemas onde o comando do Python é `python3`:
 
 ```bash
 python3 exemplo.py
