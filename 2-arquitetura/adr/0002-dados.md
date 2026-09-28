@@ -16,12 +16,16 @@ Distribuir a propriedade dos dados conforme as fronteiras definidas na ADR 0001.
 
 | Subdomínio | Propriedade dos dados | Consistência |
 |---|---|---|
-| **Cartões e Recarga** | Cartões, saldos, recargas e movimentações financeiras. | Forte nas operações que alteram saldo. |
+| **Cartões e Recarga** | Cartões, saldos, recargas, movimentações financeiras e o perfil de gratuidade ou desconto de cada cartão. | Forte nas operações que alteram saldo. |
 | **Validação Embarcada** | Dados mínimos para operação offline e validações ainda não sincronizadas. | Local durante a desconexão e eventual com o backend. |
 | **Telemetria** | Posições e demais dados enviados pela frota. | Assíncrona por eventos. |
 | **Informação ao Passageiro** | Modelos de leitura derivados da telemetria. | Eventual, com atraso de alguns segundos aceitável. |
-| **Conciliação** | Fechamentos, resultados e informações necessárias para auditoria e recálculo. | Forte na consolidação financeira. |
-| **Atendimento** | Informações próprias do atendimento. | Consulta dados externos por interfaces publicadas pelos respectivos proprietários. |
+| **Conciliação** | Fechamentos, resultados, regras tarifárias versionadas por período de vigência e informações necessárias para auditoria e recálculo. | Forte na consolidação financeira. |
+| **Atendimento** | Informações próprias do atendimento e o registro de quem alterou o quê. | Consulta dados externos por interfaces publicadas pelos respectivos proprietários. |
+
+O perfil de gratuidade ou desconto (estudante, idoso, pessoa com deficiência) pertence a Cartões e Recarga. O Atendimento recebe o pedido de cadastro e o encaminha pela interface publicada por Cartões e Recarga, sem escrever diretamente nesses dados. O desconto é aplicado como regra tarifária vigente, conforme o ADR 0005.
+
+Toda alteração feita no Atendimento (cadastro de gratuidade, segunda via, contestação, correção de cadastro) gera um registro append-only com quem alterou, qual campo ou item foi alterado e quando, e é publicada como evento de alteração. O registro guarda apenas a referência ao passageiro, e não seus dados pessoais, para não conflitar com o ADR 0005.
 
 Para permitir validação durante períodos sem conectividade, o cartão manterá o **estado operacional necessário à utilização offline**, incluindo o saldo utilizado pela validação e informações de controle da operação.
 
