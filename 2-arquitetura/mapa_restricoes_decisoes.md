@@ -1,35 +1,33 @@
-# Mapa de Restrições e Decisões
+# Mapa de restrições e decisões
 
-## Caso Ônibus — Envelope E: Operação fiscalizada (Tribunal de Contas e LGPD)
+**Caso Ônibus, Envelope E (operação fiscalizada).** Cada linha liga uma restrição do envelope (**E**) ou um requisito que aperta do caso (**C**) à decisão que a atende. Fontes das restrições: enunciado "Um problema, cinco realidades" (premissas de dimensionamento, subdomínios e Envelope E).
 
-Cada linha liga uma restrição (do envelope ou de um requisito do caso) à decisão que a atende. A coluna **Origem** indica de onde vem a restrição: **Caso** (premissas e subdomínios do caso Ônibus) ou **Envelope E** (fiscalização, trilha de auditoria, LGPD, equipe de 15 desenvolvedores, nuvem pública).
+| ID | Origem | Restrição / requisito | Decisão que a atende | ADR | Diagrama |
+|---|---|---|---|---|---|
+| C01 | Caso | Validação responde em até 300 ms, mesmo sem conexão | Decisão de aceitar ou recusar executada localmente no validador (Hexagonal), com o estado no cartão | 0001, 0008 | Contêineres |
+| C02 | Caso | Ônibus fica até 4 h sem rede | Validações ficam em fila local e sincronizam por evento quando a rede volta | 0008, 0001 | Contêineres |
+| C03 | Caso | Nunca aceitar a mesma passagem duas vezes; descobrir depois o uso em dois ônibus | Número de sequência no cartão; Cartões e Recarga detecta sequências repetidas de validadores diferentes na sincronização; consumidores idempotentes | 0008, 0002 | Contêineres |
+| C04 | Caso | Saldo consistente entre recarga no aplicativo e uso no ônibus, com atraso de sincronização | Cartões e Recarga é dono do saldo; recarga do aplicativo fica pendente e é gravada no cartão no primeiro uso em validador sincronizado | 0002, 0008 | Contêineres |
+| C05 | Caso | Fraude de recarga zero | Recarga só é creditada após o adaptador do banco confirmar a liquidação | 0003 | Contêineres |
+| C06 | Caso | Conciliação com o banco | Eventos financeiros imutáveis e adaptador de banco e adquirente conferem cada recarga contra o extrato | 0005, 0003 | Contêineres, Componentes |
+| C07 | Caso | Telemetria absorve 80 posições/s e até 5 vezes isso no pico sem perder dados | Broker persistente próprio para telemetria, consumidor idempotente, unidade que escala sozinha | 0007, 0004 | Contêineres |
+| C08 | Caso | Informação ao passageiro: pico no rush e custo baixo fora do pico | CQRS: modelo de leitura próprio, escalado separadamente pela carga | 0007, 0004 | Contêineres |
+| C09 | Caso | Recalcular o mês com as regras vigentes na data de cada viagem | Regras tarifárias versionadas por vigência, dentro da Conciliação; fatos financeiros imutáveis | 0002, 0005 | Componentes |
+| C10 | Caso | Fechamento em etapas e reprocessável | Pipes and Filters no fechamento, dentro de um hexágono com regras e portas | 0001 | Componentes |
+| C11 | Caso | Contestação do repasse em até 30 dias | Atendimento registra a contestação e aciona o reprocessamento; ajustes entram como eventos de compensação | 0006, 0005 | Contêineres, Componentes |
+| C12 | Caso | 25% dos cartões com gratuidade ou desconto | Perfil de gratuidade pertence a Cartões e Recarga, pedido pelo Atendimento; o desconto é regra tarifária versionada | 0002, 0006 | Contêineres |
+| C13 | Caso | Banco, adquirente, operadoras e legado impõem formatos | Um adaptador por sistema externo, sem ESB; legado só lido por adaptador | 0003 | Contexto, Contêineres |
+| C14 | Caso | Janelas de indisponibilidade dos terceiros | Falha contida no adaptador; recarga fica pendente e é reenviada | 0003 | Contêineres |
+| C15 | Caso | Atendimento com trilha de quem alterou o quê | Log append-only próprio do Atendimento, com evento de alteração | 0006 | Contêineres |
+| C16 | Caso | Subdomínios com cargas e evolução diferentes | Microsserviços só onde há carga própria; Atendimento em Monolito Modular | 0001, 0004 | Contêineres |
+| C17 | Caso | Fechamento consolida todas as operadoras | Arquitetura Celular descartada; consolidação na Conciliação | 0001 | Componentes |
+| E01 | Envelope E | Tribunal de Contas audita o repasse; tudo precisa ser reconstruível | Event Sourcing localizado em Cartões e Recarga e na Conciliação, eventos append-only com compensação | 0005, 0002 | Contexto, Componentes |
+| E02 | Envelope E | LGPD com direito ao esquecimento | Eventos guardam só referência opaca; dados pessoais no Cadastro de Passageiros, cuja eliminação não toca os eventos | 0005, 0002 | Contêineres, Componentes |
+| E03 | Envelope E | Trilha de auditoria completa na nuvem pública | Trilha financeira no Event Store; trilha do Atendimento no log próprio; chamadas externas rastreadas com correlação | 0005, 0006, 0004 | Contêineres |
+| E04 | Envelope E | Rastreabilidade operacional na nuvem pública | Logs, métricas e rastreamento centralizados, com identificador de correlação | 0004 | Contêineres |
+| E05 | Envelope E | 15 desenvolvedores | Microsserviços limitados a cinco unidades; nada de microsserviços em todos os subdomínios | 0001, 0004 | Contêineres |
+| E06 | Envelope E | 1 responsável por conformidade | Relatório de fechamento gerado automaticamente; eliminação de dados pessoais local e automatizável | 0004, 0005 | Componentes |
 
-| ID | Origem | Restrição / requisito | Decisão arquitetural | Referências |
-|---|---|---|---|---|
-| **R01** | Caso | Validação embarcada responde em até **300 ms**, mesmo sem conexão. | Executar a decisão de validação localmente no validador, com regras e dados mínimos disponíveis no equipamento. Aplicação embarcada em Arquitetura Hexagonal, separando regra de negócio de leitor de cartão, armazenamento local e comunicação. | ADR 0001, ADR 0004, C4 Contêineres |
-| **R02** | Caso | O ônibus pode ficar até **4 horas sem conexão 4G**. | Registrar localmente as operações pendentes e sincronizá-las de forma assíncrona, por eventos, quando a rede retornar. | ADR 0001, ADR 0002, ADR 0004, C4 Contêineres |
-| **R03** | Caso | Nunca aceitar a mesma passagem duas vezes. | Identificador único por validação, controle local das utilizações no validador e no cartão, e processamento idempotente no backend para evitar efeitos duplicados em reenvios. | ADR 0002, ADR 0004, ADR 0005, C4 Contêineres |
-| **R04** | Caso | Saldo consistente e sem crédito duplicado. | Cartões e Recarga é o dono do histórico financeiro do saldo, com consistência forte nas operações que o alteram. Cada recarga tem identificador único e é aplicada de forma idempotente. | ADR 0002, ADR 0005, C4 Contêineres |
-| **R05** | Caso | Telemetria absorve **80 posições/s em média e até 5× esse valor (cerca de 400/s) no pico**, sem perder dados. | Isolar a Telemetria como unidade independente, com mensageria persistente entre ingestão e processamento, reentrega de mensagens e consumidores idempotentes. | ADR 0001, ADR 0004, C4 Contêineres |
-| **R06** | Caso | Informação ao Passageiro tem alto volume de leitura e tolera atraso de alguns segundos. | CQRS: modelos de leitura próprios, derivados da telemetria e atualizados de forma assíncrona. | ADR 0001, ADR 0002, C4 Contêineres |
-| **R07** | Caso | O repasse é recalculado com as regras **vigentes na data de cada viagem**. | Preservar os fatos financeiros com suas datas e manter regras tarifárias versionadas por período de vigência. Event Sourcing apenas onde o histórico precisa ser reconstruído. | ADR 0002, ADR 0005, C4 Componentes |
-| **R08** | Caso | A conciliação tem várias etapas e precisa permitir reprocessamento. | Pipes and Filters: recuperação dos fatos, validação, seleção da regra vigente, cálculo e consolidação em etapas independentes. | ADR 0001, C4 Componentes |
-| **R09** | Envelope E | O Tribunal de Contas audita o repasse; tudo o que afeta o repasse precisa ser reconstruível. | Histórico financeiro append-only, com regras utilizadas e resultados da conciliação, permitindo reconstruir cada valor repassado. | ADR 0002, ADR 0005, C4 Contexto, C4 Componentes |
-| **R10** | Envelope E / Caso | Histórico identificado de viagens é dado pessoal (LGPD, direito ao esquecimento). | Dados pessoais em armazenamento separado dos eventos financeiros, que guardam só um identificador de referência. A eliminação dos dados pessoais não remove os fatos financeiros. | ADR 0002, ADR 0005, C4 Componentes |
-| **R11** | Caso | Banco, adquirente, operadoras e legado impõem contratos e formatos. | Ports and Adapters: um adaptador por sistema externo traduz o contrato externo para o modelo interno. ESB não é obrigatório. | ADR 0003, C4 Contexto, C4 Contêineres |
-| **R12** | Caso | Subdomínios têm cargas, disponibilidade e evolução diferentes. | Implantar e escalar separadamente apenas as capacidades que precisam, evitando microsserviços para todo o sistema. | ADR 0001, ADR 0004, C4 Contêineres |
-| **R13** | Envelope E | Equipe de **15 desenvolvedores e 1 responsável por conformidade**. | Arquitetura híbrida com granularidade controlada. Capacidades de baixo volume, como Atendimento, ficam em Monolito Modular. | ADR 0001, ADR 0004, C4 Contêineres |
-| **R14** | Envelope E | Nuvem pública com trilha de auditoria completa e rastreabilidade. | Logs, métricas e rastreamento centralizados, com identificadores de correlação entre serviços, eventos e integrações. | ADR 0003, ADR 0004, C4 Contêineres |
-| **R15** | Caso | O fechamento consolida dados de várias operadoras e validações. | Não usar Arquitetura Celular, pois a separação rígida em células dificultaria a consolidação global. A consolidação é responsabilidade da Conciliação. | ADR 0001, ADR 0002, C4 Componentes |
-| **R16** | Caso | **Fraude de recarga zero** e **conciliação com o banco**. | Recargas com identificador único e idempotentes, confirmação da liquidação pelo adaptador de Banco/Adquirente antes do crédito, e eventos financeiros imutáveis para conferir cada recarga contra o extrato do banco. | ADR 0002, ADR 0003, ADR 0005, C4 Contêineres |
-| **R17** | Caso | **25% dos cartões** têm gratuidade ou desconto (estudante, idoso, pessoa com deficiência). | Cartões e Recarga mantém o perfil de gratuidade/desconto do cartão, cadastrado pelo Atendimento. O desconto é aplicado como regra tarifária vigente e versionada, o que permite recalculá-lo no repasse. | ADR 0002, ADR 0005, C4 Contêineres, C4 Componentes |
-| **R18** | Caso | **Custo baixo fora do pico** na Informação ao Passageiro, com pico de acessos no rush. | Escalar a Informação ao Passageiro separadamente, sobre modelos de leitura, ajustando a capacidade ao horário (nuvem paga por uso). | ADR 0001, ADR 0004, C4 Contêineres |
-| **R19** | Caso | **Contestação do repasse em até 30 dias.** | Atendimento registra a contestação. A Conciliação reexecuta o pipeline sobre os eventos e as regras vigentes na data, sem alterar os fatos originais. Correções entram como eventos de compensação. | ADR 0004, ADR 0005, C4 Contêineres, C4 Componentes |
-| **R20** | Caso | **Janelas de indisponibilidade** dos terceiros (banco, adquirente, legado). | Falhas externas ficam contidas no adaptador. Quando não há necessidade de resposta imediata, a integração é assíncrona, com reenvio quando o terceiro voltar. | ADR 0003, ADR 0004, C4 Contêineres |
-| **R21** | Caso / Envelope E | Atendimento exige **trilha de quem alterou o quê**. | Toda alteração feita no Atendimento (quem, o quê, quando) é registrada em log append-only e publicada como evento de alteração. | ADR 0001, ADR 0003, C4 Contêineres |
+## Síntese
 
-## Síntese das decisões
-
-A solução adota uma arquitetura híbrida, com um estilo para cada perfil de subdomínio. Hexagonal em Validação, Conciliação e Integrações; Orientada a Eventos nos fluxos assíncronos; CQRS nas consultas de Informação ao Passageiro; Pipes and Filters no fechamento financeiro; Event Sourcing apenas nos fatos financeiros que precisam ser reconstruídos.
-
-Microsserviços só onde há necessidade concreta de escala ou isolamento. Serverless e Arquitetura Celular não são estilos principais da solução.
+Arquitetura híbrida com um estilo por perfil de capacidade e uma fronteira explícita por composição (ADR 0001). Serverless e Arquitetura Celular foram consideradas e descartadas, com motivo, no mesmo ADR.
