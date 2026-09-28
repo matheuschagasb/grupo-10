@@ -1,42 +1,19 @@
-# ADR 0003: isolar integrações externas por portas e adaptadores
+# ADR 0003: isolar terceiros e legado em adaptadores por porta
 
 **Status:** aceito
 
-## Contexto
+**Contexto:** Banco, adquirente, operadoras e o sistema legado impõem formatos e janelas de indisponibilidade. O legado do fornecedor atual só expõe um banco de leitura e arquivos de texto diários. A fraude de recarga deve ser zero e cada recarga deve ser conciliada com o banco.
 
-O sistema precisa se integrar com banco, adquirente, operadoras e outros sistemas externos que possuem contratos, protocolos e formatos próprios.
+**Decisão:** Cada sistema externo tem um adaptador que traduz seu contrato para uma porta do domínio, as regras dependem só das portas, e a recarga só é creditada depois que o adaptador do banco confirma a liquidação. O legado é lido apenas por adaptador, em modo somente leitura, inclusive na importação do histórico em lote.
 
-Esses detalhes não devem se espalhar pelas regras internas do sistema. Além disso, falhas ou mudanças de um terceiro devem ter impacto limitado sobre as demais capacidades.
+**Alternativas consideradas:**
+- Integração direta no domínio: descartada por acoplar as regras a contratos de terceiros.
+- ESB obrigatório: descartado por acrescentar latência e um ponto central de falha sem necessidade comprovada.
+- Ponto a ponto sem fronteira comum: descartado porque espalha tradução e tratamento de falha pelos subdomínios.
+- Creditar a recarga antes da liquidação: descartado porque abre espaço para fraude.
 
-O Envelope E também exige rastreabilidade das interações externas para fins de fiscalização.
+**Consequências:**
+- Positivas: mudanças externas ficam nos adaptadores; falhas de terceiros ficam contidas; recarga só entra com liquidação confirmada.
+- Negativas: um adaptador por integração para manter; o passageiro espera a confirmação do banco para ver o crédito; se o banco cair, a recarga fica pendente até o reenvio.
 
-## Decisão
-
-Utilizar Arquitetura Hexagonal nas fronteiras de integração, representando as necessidades do sistema por portas internas e implementando adaptadores específicos para cada sistema externo.
-
-| Integração | Decisão |
-|---|---|
-| **Banco / Adquirente** | Utilizar adaptadores próprios para traduzir contratos, mensagens e formatos externos para o modelo interno. |
-| **Operadoras** | Isolar protocolos e formatos específicos em adaptadores dedicados. |
-| **Sistemas legados** | Utilizar adaptadores para impedir que estruturas e regras do legado se propaguem para o domínio. |
-| **Auditoria** | Registrar as interações relevantes, seus identificadores, resultados e falhas para permitir rastreabilidade. |
-
-As regras de negócio dependerão das portas definidas pelo próprio sistema, e não diretamente de bibliotecas, protocolos ou formatos pertencentes aos terceiros.
-
-Chamadas síncronas serão utilizadas quando houver necessidade de resposta imediata. Quando essa resposta não for necessária, a integração poderá utilizar eventos ou processamento assíncrono conforme definido na ADR 0001.
-
-Um ESB não será adotado como intermediário obrigatório. A utilização de mecanismos de mediação centralizada somente será considerada caso surja uma necessidade concreta de tradução, roteamento ou aplicação compartilhada de políticas entre várias integrações.
-
-Falhas externas devem permanecer contidas nos respectivos adaptadores sempre que possível.
-
-## Alternativas consideradas
-
-- **Integração direta com as regras de domínio:** descartada porque aumentaria o acoplamento com contratos e tecnologias controlados por terceiros.
-- **ESB obrigatório para todas as integrações:** descartado porque adicionaria complexidade, latência e dependência de um componente central sem necessidade suficiente no cenário atual.
-- **Integrações ponto a ponto sem uma fronteira comum:** descartadas porque espalhariam lógica de tradução e tratamento de falhas por vários subdomínios.
-
-## Consequências
-
-**Positivas:** mudanças externas ficam concentradas nos adaptadores; as regras de domínio permanecem independentes dos terceiros; integrações podem ser substituídas e testadas isoladamente; e as interações externas tornam-se mais rastreáveis.
-
-**Negativas:** cada integração exige manutenção de seu próprio adaptador; transformações entre modelos aumentam a quantidade de código; e alterações incompatíveis nos contratos externos ainda exigem atualização dos adaptadores.
+**Fontes:** ABREU (2026): §7.2 (portas e adaptadores), §10.6 e §10.7 (ESB), §19.3 (camada anticorrupção). Premissas de dimensionamento e requisitos do caso Ônibus (enunciado "Um problema, cinco realidades").
