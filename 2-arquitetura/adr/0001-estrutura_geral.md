@@ -1,44 +1,29 @@
-# ADR 0001: adotar arquitetura híbrida orientada por capacidades
+# ADR 0001: compor estilos por capacidade, com fronteira explícita entre cada par
 
 **Status:** aceito
 
-## Contexto
+**Contexto:** O sistema tem capacidades com perfis muito diferentes: validação embarcada (300 ms, até 4 h sem rede), telemetria (80 posições/s, pico de 400/s), cartões e recarga (saldo e dinheiro), conciliação (auditável e recalculável), informação ao passageiro (pico de leitura no rush), atendimento (baixo volume) e integrações com terceiros. A equipe tem 15 desenvolvedores e 1 responsável por conformidade, em nuvem pública. O Tribunal de Contas exige reconstruir o repasse e a LGPD exige eliminar dados pessoais.
 
-O sistema possui capacidades com necessidades muito diferentes de carga, disponibilidade e evolução. A validação embarcada precisa operar offline, a telemetria recebe fluxo contínuo com picos, Cartões e Recarga possui operações financeiras e a Conciliação precisa permitir auditoria e recálculo.
+**Decisão:** Adotar arquitetura híbrida, com Microsserviços apenas em Cartões e Recarga, Telemetria, Informação ao Passageiro, Conciliação e Integração Externa, e Monolito Modular no Atendimento. Entre unidades a comunicação padrão é por evento, com chamada só quando a resposta imediata é necessária, e nenhuma unidade acessa o banco de outra.
 
-Uma única arquitetura para todo o sistema aumentaria o acoplamento ou imporia complexidade desnecessária. A equipe possui 15 desenvolvedores, portanto a quantidade de unidades independentes também deve ser controlada.
+**Fronteiras entre estilos:**
+- Hexagonal ↔ Event-Driven (Validador): o hexágono termina na porta de sincronização e o broker começa depois dela; aceitar ou recusar a passagem nunca cruza essa fronteira (ADR 0008).
+- Hexagonal ↔ Pipes and Filters (Conciliação): o hexágono guarda regras e portas; o pipeline é o adaptador que executa o fechamento, e só a porta de liquidação sai dele (ADR 0003).
+- Event Sourcing ↔ estado atual: Event Sourcing só em Cartões e Recarga e na Conciliação (ADR 0005).
+- Event-Driven ↔ CQRS (Telemetria): a escrita termina no evento de posição; a leitura começa no consumidor que projeta o modelo (ADR 0007).
+- Monolito Modular ↔ resto: o Atendimento só fala por interface publicada ou evento (ADR 0006).
+- Hexagonal ↔ terceiros: contratos externos ficam no adaptador (ADR 0003).
 
-O Envelope E exige rastreabilidade, fiscalização e tratamento adequado dos dados pessoais.
+**Alternativas consideradas:**
+- Monolito em Camadas: descartado porque cargas diferentes seriam implantadas e escaladas juntas.
+- Monolito Modular único: descartado por não escalar Telemetria e Informação ao Passageiro separadamente.
+- Microsserviços em todos os subdomínios: descartado pelo custo operacional para 15 desenvolvedores.
+- Event-Driven em tudo: descartado porque a validação precisa ser local e imediata.
+- Arquitetura Celular: descartada porque células isoladas dificultam o fechamento, que consolida todas as operadoras.
+- Serverless: descartado porque a telemetria é fluxo contínuo e previsível, sem ociosidade que justifique cobrança por invocação, e a validação roda no ônibus.
 
-## Decisão
+**Consequências:**
+- Positivas: cada capacidade usa o estilo do seu perfil; só cinco unidades escalam de forma independente; cada fronteira pode ser revista sem reescrever as demais.
+- Negativas: a equipe precisa dominar vários estilos; eventos trazem consistência eventual e exigem idempotência; cinco unidades independentes elevam o custo operacional; as fronteiras precisam ser vigiadas a cada evolução.
 
-Adotar uma arquitetura híbrida orientada por capacidades, aplicando cada estilo apenas onde suas características forem necessárias.
-
-| Capacidade | Estilo adotado | Fronteira / finalidade |
-|---|---|---|
-| **Atendimento** | Monolito Modular | Mantém seus módulos em uma única unidade de implantação, pois não exige escala independente. |
-| **Validação Embarcada** | Hexagonal + Event-Driven | Hexagonal organiza a lógica local e isola hardware, armazenamento e comunicação. Eventos são utilizados apenas para sincronização com o backend. |
-| **Cartões e Recarga** | Capacidade independente + Event-Driven | Mantém saldo e operações financeiras dentro de sua fronteira e publica alterações relevantes por eventos. |
-| **Telemetria** | Event-Driven + CQRS | Eventos desacoplam ingestão e processamento; CQRS separa o fluxo de escrita dos modelos utilizados em consultas. |
-| **Informação ao Passageiro** | CQRS | Utiliza modelos de leitura derivados da telemetria, sem acessar diretamente seu armazenamento interno. |
-| **Conciliação** | Hexagonal + Pipes and Filters | Hexagonal isola as regras financeiras; Pipes and Filters organiza as etapas de recuperação, validação, cálculo e consolidação. |
-| **Integrações Externas** | Hexagonal / Ports and Adapters | Contratos e formatos de terceiros permanecem nos adaptadores e não entram no domínio. |
-
-Entre capacidades independentes, nenhuma poderá acessar diretamente o armazenamento ou a implementação interna de outra.
-
-Chamadas síncronas serão utilizadas apenas quando houver necessidade de resposta imediata. A propagação de fatos que não exige resposta imediata utilizará eventos.
-
-As decisões específicas sobre dados, integração, implantação e histórico financeiro são detalhadas nos ADRs 0002 a 0005.
-
-## Alternativas consideradas
-
-- **Monolito em Camadas para todo o sistema:** descartado porque obrigaria capacidades com perfis muito diferentes a escalar e evoluir juntas.
-- **Monolito Modular para todo o sistema:** descartado porque não permitiria implantação e escala independentes onde elas são necessárias.
-- **Microsserviços para todos os subdomínios:** descartado pelo aumento de complexidade operacional para uma equipe de 15 desenvolvedores.
-- **Arquitetura Orientada a Eventos para todas as interações:** descartada porque algumas decisões, como a validação da passagem, precisam ser locais e imediatas.
-
-## Consequências
-
-**Positivas:** cada capacidade utiliza um estilo adequado às suas necessidades; Telemetria e Cartões/Recarga podem escalar de forma independente; eventos reduzem acoplamento temporal; Hexagonal protege as regras de negócio; CQRS otimiza as consultas; e Pipes and Filters facilita o reprocessamento da Conciliação.
-
-**Negativas:** a combinação de estilos aumenta a complexidade arquitetural; eventos exigem tratamento de falhas e idempotência; unidades independentes aumentam o custo operacional; e as fronteiras precisam ser mantidas corretamente durante a evolução do sistema.
+**Fontes:** ABREU (2026), Estilos Arquiteturais de Software: §4.6 (ADR em arquiteturas híbridas), §9.6 e §9.7 (Microsserviços), §12.6 (Serverless), §13.6 (Celular). Premissas de dimensionamento e requisitos do caso Ônibus (enunciado "Um problema, cinco realidades").
