@@ -1,55 +1,21 @@
-# ADR 0005: limitar Event Sourcing ao histórico financeiro auditável
+# ADR 0005: separar dados pessoais dos eventos financeiros por referência opaca
 
 **Status:** aceito
 
-## Contexto
+**Contexto:** O Tribunal de Contas audita o repasse e exige reconstruí-lo a partir de fatos imutáveis. A LGPD dá ao titular o direito de pedir a eliminação de dados pessoais, ressalvadas as hipóteses de conservação previstas na própria lei. Um armazenamento imutável não apaga registros sem quebrar a integridade do fluxo, e Event Sourcing tem custo alto de versionamento e reprocessamento.
 
-O sistema precisa preservar informações suficientes para reconstruir operações financeiras, recalcular fechamentos e permitir auditoria dos repasses.
+**Decisão:** Usar Event Sourcing só em Cartões e Recarga e na Conciliação, com eventos que guardam apenas uma referência opaca ao passageiro (identificador aleatório, sem CPF nem hash de CPF) e dados pessoais no Cadastro de Passageiros. A eliminação apaga o cadastro, o vínculo e as cópias em Banco de Cartões, Modelo de Leitura e registro do Atendimento, sem tocar nos eventos, e correções entram como eventos de compensação.
 
-Ao mesmo tempo, o Envelope E exige tratamento adequado dos dados pessoais conforme a LGPD. Armazenar dados pessoais identificáveis diretamente em um histórico imutável criaria conflito com necessidades de retenção e eliminação.
+**Alternativas consideradas:**
+- Crypto-shredding (chave por titular): descartado por acrescentar cifra em toda leitura e gestão de chaves para uma equipe pequena; volta a ser candidato se a auditoria exigir dado pessoal dentro do evento.
+- Apagar o evento junto com o dado pessoal: descartado porque a soma do repasse deixa de bater na auditoria.
+- Dado pessoal dentro do evento: descartado porque prende a auditoria à retenção permanente desse dado.
+- Event Sourcing em todo o sistema: descartado por custo sem benefício e por conflito com a eliminação.
 
-Como Event Sourcing aumenta a complexidade de persistência, projeções e reprocessamento, seu uso deve ser restrito às partes do sistema que realmente precisam de reconstrução histórica.
+**Consequências:**
+- Positivas: o repasse continua reconstruível após a eliminação; a eliminação é local e automatizável; o cadastro tem ciclo de retenção próprio.
+- Negativas: a referência continua ligando as viagens entre si, e o cruzamento de trajetos pode reidentificar a pessoa, risco residual a validar com a responsável por conformidade; cópias de segurança precisam de prazo de expiração definido; exige versionamento de eventos e de regras tarifárias.
 
-## Decisão
+**Validação:** provado por `3-spike/exemplo.py` (registro, eliminação, reconstrução e reprocessamento sem duplicar). O spike cobre apenas Event Store e cadastro, não as cópias nem os backups.
 
-Adotar Event Sourcing de forma localizada em Cartões/Recarga e Conciliação, apenas para os fatos financeiros necessários à auditoria, reconstrução de saldo e recálculo do fechamento.
-
-Os eventos financeiros serão armazenados em formato append-only e representarão fatos ocorridos no sistema. Correções serão registradas por novos eventos de compensação ou reversão, sem alterar os eventos anteriores.
-
-Os dados pessoais identificáveis não serão armazenados diretamente nesses eventos. Quando for necessário relacionar uma operação a uma pessoa, o evento manterá apenas um identificador de referência, enquanto os dados pessoais ficarão em armazenamento separado.
-
-Dessa forma, os dados pessoais poderão seguir seu próprio ciclo de retenção e eliminação sem apagar os fatos financeiros necessários à auditoria.
-
-As regras tarifárias (valor da tarifa, gratuidades e descontos, divisão entre operadoras) são definidas pelo órgão gestor e pertencem à Conciliação, conforme o ADR 0002. Elas são versionadas por período de vigência, com data de início e de fim, e nunca são sobrescritas: uma mudança cria uma nova versão. O fechamento seleciona a versão vigente na data de cada viagem, o que permite recalcular o mês sem alterar os eventos originais.
-
-As contestações do repasse (prazo de 30 dias), registradas pelo Atendimento, reexecutam o pipeline da Conciliação sobre os mesmos eventos e as regras vigentes na data. Qualquer ajuste resultante entra como novo evento de compensação.
-
-As projeções geradas a partir dos eventos deverão poder ser reconstruídas e reprocessadas sem produzir efeitos financeiros duplicados.
-
-O Event Sourcing não será utilizado como mecanismo de persistência geral dos demais subdomínios.
-
-## Alternativas consideradas
-
-- **Armazenar apenas o estado atual:** descartado porque dificultaria reconstruir o estado financeiro a partir dos fatos que produziram o resultado.
-- **Aplicar Event Sourcing em todo o sistema:** descartado porque aumentaria a complexidade sem benefício equivalente para todos os subdomínios.
-- **Armazenar dados pessoais diretamente nos eventos financeiros:** descartado porque vincularia a auditoria financeira à retenção permanente desses dados.
-- **Excluir eventos financeiros junto com os dados pessoais:** descartado porque poderia comprometer a integridade do histórico e impedir auditoria e recálculo.
-
-## Consequências
-
-**Positivas:** permite reconstrução do estado financeiro; facilita auditoria e recálculo; preserva o histórico das operações; e separa os dados pessoais do histórico financeiro permanente.
-
-**Negativas:** exige versionamento de eventos e das regras tarifárias, manutenção de projeções, tratamento de reprocessamento e maior controle sobre a separação entre identificadores e dados pessoais.
-
-## Validação por Spike
-
-A viabilidade desta decisão será validada por um código de prova de conceito que deverá demonstrar:
-
-1. registro de eventos financeiros sem armazenar dados pessoais diretamente no histórico;
-2. reconstrução do estado financeiro a partir dos eventos;
-3. geração de uma projeção utilizada pela Conciliação;
-4. remoção dos dados pessoais associados ao identificador;
-5. reconstrução do estado financeiro após essa remoção;
-6. reprocessamento dos eventos sem duplicar o resultado financeiro.
-
-A decisão será considerada viável se a remoção dos dados pessoais não impedir a reconstrução do histórico financeiro nem alterar o resultado da Conciliação.
+**Fontes:** ABREU (2026): §15.7 (custo real; dados pessoais e crypto-shredding). BRASIL. Lei nº 13.709/2018 (LGPD). Requisitos do Envelope E (enunciado).
