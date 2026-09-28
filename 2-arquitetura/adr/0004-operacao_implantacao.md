@@ -1,43 +1,19 @@
-# ADR 0004: implantar e escalar independentemente as capacidades críticas
+# ADR 0004: implantar por unidade com liberação gradual e observabilidade central
 
 **Status:** aceito
 
-## Contexto
+**Contexto:** A Telemetria tem pico de 5 vezes a média, a Informação ao Passageiro tem pico de leitura no rush e a Validação precisa funcionar sem nuvem. A operação roda em nuvem pública, com 15 desenvolvedores e 1 responsável por conformidade. O Envelope E exige rastrear as operações relevantes para a fiscalização.
 
-As capacidades do sistema possuem perfis operacionais diferentes. A Telemetria precisa suportar picos de até cinco vezes a carga normal, a Informação ao Passageiro possui grande volume de consultas e a Validação Embarcada precisa responder em até 300 ms mesmo durante períodos de até quatro horas sem conexão.
+**Decisão:** Cada unidade do ADR 0001 tem pipeline de entrega próprio e sobe por liberação gradual com reversão, e os validadores são atualizados em ondas, a partir de uma linha, mantendo a versão anterior até a confirmação. Telemetria e Informação ao Passageiro escalam pela carga; logs, métricas, rastreamento e chamadas externas ficam em serviço central com identificador de correlação, e o relatório de fechamento é gerado automaticamente.
 
-A solução será executada em nuvem pública e mantida por uma equipe de 15 desenvolvedores. Portanto, a independência operacional deve ser aplicada apenas onde houver necessidade concreta.
+**Alternativas consideradas:**
+- Backend em uma única unidade de implantação: descartado porque cargas diferentes escalariam juntas.
+- Todos os subdomínios como unidades independentes: descartado pelo custo operacional.
+- Atualizar todos os validadores de uma vez: descartado porque uma versão com defeito pararia a frota inteira.
+- Observabilidade por unidade, sem serviço central: descartada porque impede seguir uma operação entre unidades.
 
-O Envelope E também exige rastreabilidade das operações relevantes para fiscalização.
+**Consequências:**
+- Positivas: cada unidade escala e é implantada sem tocar as outras; falha em uma onda de validadores afeta poucas linhas; o relatório automático reduz a carga sobre a responsável por conformidade.
+- Negativas: mais unidades para operar; contratos entre unidades devem permanecer compatíveis durante implantações separadas; a atualização gradual mantém versões diferentes de validador em campo ao mesmo tempo.
 
-## Decisão
-
-Implantar e escalar separadamente apenas as capacidades que possuem necessidades próprias de carga, disponibilidade ou evolução.
-
-| Capacidade | Decisão operacional |
-|---|---|
-| **Validação Embarcada** | Executar localmente nos validadores dos ônibus, sem depender da disponibilidade da nuvem para aceitar ou recusar uma passagem. Operações pendentes ficam armazenadas localmente até a sincronização. |
-| **Cartões e Recarga** | Manter como unidade independente quando necessário para permitir evolução e escala próprias das operações financeiras. |
-| **Telemetria** | Implantar como unidade independente, com ingestão desacoplada do processamento por mensageria persistente, permitindo absorver picos sem bloquear o recebimento de dados. |
-| **Informação ao Passageiro** | Escalar separadamente utilizando os modelos de leitura do CQRS, sem aumentar diretamente a carga sobre a ingestão da Telemetria. |
-| **Conciliação** | Executar separadamente dos fluxos de resposta imediata, permitindo fechamento e reprocessamento sem bloquear Validação, Recarga ou Telemetria. |
-| **Atendimento** | Manter agrupado em uma única unidade modular enquanto não houver necessidade concreta de escala independente. |
-
-As unidades independentes deverão permitir implantação e escala sem exigir a implantação simultânea de todo o sistema.
-
-A Telemetria utilizará mensageria persistente entre ingestão e processamento. Mensagens não processadas com sucesso poderão ser entregues novamente, e os consumidores deverão ser idempotentes para impedir efeitos duplicados.
-
-A operação deverá possuir observabilidade centralizada, incluindo logs, métricas e rastreamento das transações relevantes. Identificadores de correlação serão utilizados quando necessário para acompanhar uma operação entre serviços, eventos e integrações externas.
-
-## Alternativas consideradas
-
-- **Implantar todo o backend como uma única unidade:** descartado porque capacidades com cargas diferentes teriam de escalar e ser implantadas juntas.
-- **Transformar todos os subdomínios em microsserviços:** descartado pelo aumento de complexidade operacional para uma equipe de 15 desenvolvedores.
-- **Depender do backend para validar uma passagem:** descartado porque a operação precisa continuar funcionando sem conectividade.
-- **Processar Telemetria de forma totalmente síncrona:** descartado porque consumidores lentos poderiam limitar a ingestão e comprometer a absorção dos picos.
-
-## Consequências
-
-**Positivas:** capacidades críticas podem escalar separadamente; picos de Telemetria ficam mais isolados; a Validação continua disponível sem rede; consultas dos passageiros não competem diretamente com a ingestão; e logs, métricas e rastreamento favorecem operação e fiscalização.
-
-**Negativas:** múltiplas unidades aumentam a complexidade operacional; a equipe precisa tratar sincronização após períodos offline; mensagens podem acumular durante falhas; e contratos entre unidades precisam permanecer compatíveis durante implantações independentes.
+**Fontes:** ABREU (2026): §9.7 (custo real de Microsserviços), §18.5 (observabilidade e correlação). Premissas de dimensionamento e requisitos do caso Ônibus (enunciado "Um problema, cinco realidades"); Envelope E.
