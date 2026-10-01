@@ -67,5 +67,5 @@ A auditoria é do tribunal de contas sobre o repasse financeiro.
 - `1-matriz/`: Contém a análise dos 12 estilos arquiteturais e sua aderência ao nosso caso e envelope.
 - `2-arquitetura/`: Contém os diagramas C4 (Contexto, Contêineres e Componentes), o mapa de restrições vs. decisões, os 8 ADRs e as respostas às perguntas obrigatórias do domínio.
 - `3-spike/`: Prova de conceito (código executável) focada na resolução do conflito entre trilha de auditoria e exclusão de dados (LGPD), separando o histórico financeiro auditável dos dados pessoais identificáveis.
-- `4-leitura-cruzada/`: Previsto para a etapa de leitura cruzada.
+- `4-leitura-cruzada/`: Contém as objeções e argumentos da leitura cruzada sobre a arquitetura do Grupo 08.
 - `5-final/`: Previsto para a entrega final, com o changelog consolidado após a leitura cruzada.
